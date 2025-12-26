@@ -1,0 +1,9 @@
+{
+  "name": "EstateFlow AI - Real Estate SaaS",
+  "description": "A production-grade real estate automation platform that syncs Telegram property data to Facebook Marketplace and manages leads with AI.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
