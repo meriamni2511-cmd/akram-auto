@@ -9,8 +9,56 @@ import { telegramService } from './services/telegramService';
 import { analyzePropertyMedia } from './services/geminiService';
 import { automationService } from './services/automationService';
 import { VaultService } from './services/storageService';
-import { TrendingUp, Users, Target, CheckCircle, Activity, Zap, ShieldCheck, Globe, Key, Eye, EyeOff, Save, Facebook, Check, Database, Lock, Loader2, Unlock, ShieldAlert, LogIn, AlertCircle, RefreshCcw, Home, PlusCircle } from 'lucide-react';
+import { 
+  TrendingUp, Users, Target, CheckCircle, Activity, Zap, ShieldCheck, Globe, 
+  Key, Eye, EyeOff, Save, Facebook, Check, Database, Lock, Loader2, 
+  Unlock, ShieldAlert, LogIn, AlertCircle, RefreshCcw, Home, PlusCircle, 
+  HelpCircle, ArrowRight, XCircle, LogOut, ChevronRight 
+} from 'lucide-react';
 import { Property, PropertyStatus, FacebookCredentials, AuthMethod, PropertyData, AuthFailureReason } from './types';
+
+const ERROR_DESCRIPTIONS: Record<AuthFailureReason, { title: string, help: string, icon: React.ReactNode }> = {
+  [AuthFailureReason.INVALID_API_KEY]: {
+    title: "License Error",
+    help: "Airtop API key is invalid or expired. Check subscription.",
+    icon: <XCircle className="text-red-500" />
+  },
+  [AuthFailureReason.WRONG_CREDENTIALS]: {
+    title: "Auth Failed",
+    help: "Facebook login invalid. Please check email/password.",
+    icon: <AlertCircle className="text-red-500" />
+  },
+  [AuthFailureReason.TWO_FACTOR_REQUIRED]: {
+    title: "2FA Block",
+    help: "Facebook requires 2FA. Use 'Session Cookies' instead.",
+    icon: <Lock className="text-orange-500" />
+  },
+  [AuthFailureReason.AUTH_CHALLENGE]: {
+    title: "Security Check",
+    help: "Manual verification required on your device first.",
+    icon: <ShieldAlert className="text-orange-500" />
+  },
+  [AuthFailureReason.ACCOUNT_LOCKED]: {
+    title: "Account Locked",
+    help: "Meta has locked this account. Unlock manually in browser.",
+    icon: <Lock className="text-red-500" />
+  },
+  [AuthFailureReason.COOKIES_EXPIRED]: {
+    title: "Session Expired",
+    help: "Cookies no longer valid. Export fresh JSON cookies.",
+    icon: <RefreshCcw className="text-orange-500" />
+  },
+  [AuthFailureReason.TIMEOUT]: {
+    title: "Cloud Timeout",
+    help: "Verification session timed out. Please retry.",
+    icon: <Activity className="text-gray-500" />
+  },
+  [AuthFailureReason.NETWORK_ERROR]: {
+    title: "Network Error",
+    help: "Unable to reach automation clusters. Check connection.",
+    icon: <Globe className="text-red-500" />
+  }
+};
 
 const SettingsTab: React.FC<{
   unlockedCreds: FacebookCredentials | null;
@@ -26,8 +74,9 @@ const SettingsTab: React.FC<{
   const [showPass, setShowPass] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
   const [unlockError, setUnlockError] = useState<string | null>(null);
-  const [diagReport, setDiagReport] = useState<{ reason: AuthFailureReason; message: string } | null>(null);
+  const [failureReason, setFailureReason] = useState<AuthFailureReason | null>(null);
 
   const handleSave = () => {
     if (!masterPass) {
@@ -40,34 +89,35 @@ const SettingsTab: React.FC<{
   };
 
   const handleLoginAndVerify = async () => {
-    setDiagReport(null);
+    setFailureReason(null);
     setUnlockError(null);
+    setIsSuccess(false);
 
     if (authMethod === 'credentials' && (!email || !password)) {
-      setUnlockError('Email and password are required for direct login.');
+      setUnlockError('Credentials required.');
       return;
     }
     if (authMethod === 'cookies' && !cookies) {
-      setUnlockError('Session cookies are required.');
+      setUnlockError('Cookies required.');
       return;
     }
     
     setIsVerifying(true);
-    logEmitter.emit('SYSTEM', `Running cloud diagnostic for ${authMethod}...`, 'info');
+    logEmitter.emit('SYSTEM', `Verifying ${authMethod.toUpperCase()}...`, 'info');
     
     try {
       const result = await automationService.verifyFacebookAuth({ email, password, cookies, authMethod, isSet: true });
       
       if (result.success) {
-        logEmitter.emit('AIRTOP', 'Cloud verification passed. Authentication confirmed.', 'success');
+        logEmitter.emit('AIRTOP', 'Verification SUCCESS.', 'success');
+        setIsSuccess(true);
         if (masterPass) handleSave();
-        alert('Verification Successful: Your Facebook session is active and cloud-ready.');
       } else {
-        logEmitter.emit('NETWORK', `Verification Diagnostic: ${result.reason}`, 'error');
-        setDiagReport({ reason: result.reason!, message: result.message! });
+        logEmitter.emit('NETWORK', `Failed: ${result.reason}`, 'error');
+        setFailureReason(result.reason!);
       }
     } catch (e: any) {
-      setUnlockError(`Unexpected Error: ${e.message}`);
+      setUnlockError(`Infrastructure Error: ${e.message}`);
     } finally {
       setIsVerifying(false);
     }
@@ -78,35 +128,32 @@ const SettingsTab: React.FC<{
     try {
       await onUnlock(masterPass);
     } catch (e: any) {
-      setUnlockError('Decryption failed. Incorrect Master Password.');
+      setUnlockError('Decryption failed.');
     }
   };
 
   if (!unlockedCreds && VaultService.hasVault()) {
     return (
-      <div className="max-w-md mx-auto py-20 animate-in fade-in zoom-in duration-500">
-        <div className="bg-[#1a1a1a] p-10 rounded-[3rem] border border-blue-500/30 shadow-2xl text-center space-y-6">
-          <div className="w-20 h-20 bg-blue-600 rounded-[2rem] flex items-center justify-center text-white mx-auto shadow-lg shadow-blue-500/20">
+      <div className="max-w-md mx-auto py-12 lg:py-20 animate-in fade-in zoom-in duration-500">
+        <div className="bg-[#111] p-10 rounded-[3rem] border border-blue-500/30 shadow-2xl text-center space-y-6">
+          <div className="w-20 h-20 bg-blue-600 rounded-[2rem] flex items-center justify-center text-white mx-auto shadow-lg">
             <Lock size={40} />
           </div>
-          <div>
-            <h3 className="text-2xl font-black text-white italic tracking-tighter uppercase">Vault Locked</h3>
-            <p className="text-xs text-gray-500 mt-2">Enter your Master Password to access Facebook integration.</p>
-          </div>
+          <h3 className="text-2xl font-black text-white italic uppercase">Vault Locked</h3>
           <div className="space-y-4">
             <input 
               type="password" 
               value={masterPass}
               onChange={(e) => setMasterPass(e.target.value)}
               placeholder="Master Password"
-              className="w-full bg-[#0d0d0d] border border-[#2a2a2a] rounded-2xl px-6 py-4 text-white text-center focus:border-blue-500 outline-none transition-all"
+              className="w-full bg-black border border-white/10 rounded-2xl px-6 py-4 text-white text-center focus:border-blue-500 outline-none"
             />
             {unlockError && <p className="text-[10px] text-red-500 font-bold uppercase">{unlockError}</p>}
             <button 
               onClick={handleUnlockRequest}
-              className="w-full py-5 rounded-2xl bg-blue-600 text-white font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl"
+              className="w-full py-5 rounded-2xl bg-blue-600 text-white font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl active:scale-95"
             >
-              Unlock Vault
+              Unlock Secure Vault
             </button>
           </div>
         </div>
@@ -115,113 +162,146 @@ const SettingsTab: React.FC<{
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-8 animate-in slide-in-from-bottom-4 duration-500 pb-20">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-2xl font-black text-white uppercase italic">Security Vault</h3>
-          <p className="text-sm text-gray-500">Manage your Facebook automation credentials.</p>
+    <div className="max-w-2xl mx-auto space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-3 bg-blue-600 rounded-2xl text-white">
+            <ShieldCheck size={24} />
+          </div>
+          <div>
+            <h3 className="text-xl lg:text-2xl font-black text-white uppercase italic tracking-tight">Security Vault</h3>
+            <p className="text-xs text-gray-500 font-bold uppercase tracking-widest">Encrypted Authentication</p>
+          </div>
         </div>
-        <button onClick={onLock} className="p-3 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-all">
-          <Unlock size={20} />
+        <button 
+          onClick={onLock} 
+          className="flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-red-500/10 text-red-500 border border-red-500/20 active:scale-95 transition-transform"
+        >
+          <Lock size={16} />
+          <span className="text-[10px] font-black uppercase tracking-widest">Lock Vault</span>
         </button>
       </div>
 
-      <div className="bg-[#1a1a1a] rounded-[2.5rem] border border-[#2a2a2a] overflow-hidden shadow-2xl">
-        <div className="p-8 border-b border-[#2a2a2a] flex gap-4">
+      <div className="bg-[#111] rounded-[2.5rem] border border-white/5 overflow-hidden shadow-2xl">
+        <div className="p-4 lg:p-8 border-b border-white/5 flex gap-2 lg:gap-4 bg-white/5">
           <button 
-            onClick={() => setAuthMethod('credentials')}
-            className={`flex-1 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all ${authMethod === 'credentials' ? 'bg-blue-600 text-white' : 'bg-[#0d0d0d] text-gray-600 hover:text-gray-400'}`}
+            onClick={() => { setAuthMethod('credentials'); setFailureReason(null); setIsSuccess(false); }}
+            className={`flex-1 flex items-center justify-center gap-2 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${
+              authMethod === 'credentials' 
+              ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
+              : 'bg-black text-gray-500 hover:text-gray-300'
+            }`}
           >
-            Direct Login
+            <LogIn size={16} />
+            Login
           </button>
           <button 
-            onClick={() => setAuthMethod('cookies')}
-            className={`flex-1 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all ${authMethod === 'cookies' ? 'bg-blue-600 text-white' : 'bg-[#0d0d0d] text-gray-600 hover:text-gray-400'}`}
+            onClick={() => { setAuthMethod('cookies'); setFailureReason(null); setIsSuccess(false); }}
+            className={`flex-1 flex items-center justify-center gap-2 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${
+              authMethod === 'cookies' 
+              ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
+              : 'bg-black text-gray-500 hover:text-gray-300'
+            }`}
           >
-            Session Cookies
+            <Database size={16} />
+            Cookies
           </button>
         </div>
 
-        <div className="p-8 space-y-6">
+        <div className="p-6 lg:p-8 space-y-8">
           {authMethod === 'credentials' ? (
-            <div className="space-y-4">
+            <div className="space-y-6">
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">FB Email/Username</label>
+                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Email / Username</label>
                 <input 
                   type="text"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-[#0d0d0d] border border-[#2a2a2a] rounded-2xl px-5 py-4 text-white focus:border-blue-500 outline-none"
+                  className="w-full bg-black border border-white/10 rounded-2xl px-6 py-4 text-white focus:border-blue-500 outline-none transition-all"
                   placeholder="name@example.com"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">FB Password</label>
+                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Password</label>
                 <div className="relative">
                   <input 
                     type={showPass ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full bg-[#0d0d0d] border border-[#2a2a2a] rounded-2xl px-5 py-4 text-white focus:border-blue-500 outline-none pr-12"
+                    className="w-full bg-black border border-white/10 rounded-2xl px-6 py-4 text-white focus:border-blue-500 outline-none transition-all"
                     placeholder="••••••••••••"
                   />
-                  <button onClick={() => setShowPass(!showPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-300">
-                    {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
+                  <button onClick={() => setShowPass(!showPass)} className="absolute right-6 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors">
+                    {showPass ? <EyeOff size={20} /> : <Eye size={20} />}
                   </button>
                 </div>
               </div>
             </div>
           ) : (
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">JSON Cookie Payload</label>
-              <textarea 
-                value={cookies}
-                onChange={(e) => setCookies(e.target.value)}
-                rows={6}
-                className="w-full bg-[#0d0d0d] border border-[#2a2a2a] rounded-2xl px-5 py-4 text-white font-mono text-xs focus:border-blue-500 outline-none resize-none"
-                placeholder='[{"name": "c_user", "value": "..."}]'
-              />
-              <p className="text-[10px] text-gray-600 italic">Recommended for accounts with 2FA enabled.</p>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Session Cookies (JSON)</label>
+                <textarea 
+                  value={cookies}
+                  onChange={(e) => setCookies(e.target.value)}
+                  rows={6}
+                  className="w-full bg-black border border-white/10 rounded-2xl px-6 py-4 text-white font-mono text-xs focus:border-blue-500 outline-none resize-none"
+                  placeholder='[{"name": "c_user", "value": "..."}]'
+                />
+              </div>
             </div>
           )}
 
-          <div className="pt-4 space-y-6">
+          {failureReason && (
+            <div className="p-6 rounded-[2rem] bg-red-500/10 border border-red-500/20 space-y-4 animate-in slide-in-from-top-4">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-red-500/20 rounded-2xl">{ERROR_DESCRIPTIONS[failureReason].icon}</div>
+                <div>
+                  <h4 className="text-xs font-black uppercase text-red-500">{ERROR_DESCRIPTIONS[failureReason].title}</h4>
+                  <p className="text-[11px] text-gray-400 mt-1">{ERROR_DESCRIPTIONS[failureReason].help}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="pt-8 border-t border-white/5 space-y-6">
             <div className="space-y-2">
-              <label className="text-[10px] font-black text-blue-500 uppercase tracking-widest">Vault Master Password</label>
+              <label className="text-[10px] font-black text-blue-500 uppercase tracking-[0.3em] ml-2">Master Password</label>
               <input 
                 type="password"
                 value={masterPass}
-                onChange={(e) => setMasterPass(e.target.value)}
-                className="w-full bg-[#0d0d0d] border border-blue-500/30 rounded-2xl px-5 py-4 text-white focus:border-blue-500 outline-none"
+                onChange={(e) => { setMasterPass(e.target.value); setUnlockError(null); }}
+                className="w-full bg-black border border-blue-500/20 rounded-2xl px-6 py-4 text-white focus:border-blue-500 outline-none"
                 placeholder="Required for encryption"
               />
             </div>
 
-            {diagReport && (
-              <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 flex gap-4">
-                <ShieldAlert className="text-red-500 shrink-0" />
-                <div>
-                  <p className="text-xs font-black text-red-500 uppercase">{diagReport.reason}</p>
-                  <p className="text-xs text-gray-400 mt-1">{diagReport.message}</p>
-                </div>
-              </div>
-            )}
-
-            <div className="flex gap-4">
+            <div className="flex flex-col gap-4">
               <button 
                 onClick={handleLoginAndVerify}
                 disabled={isVerifying}
-                className="flex-1 py-5 rounded-2xl bg-[#2a2a2a] text-white font-black uppercase tracking-widest hover:bg-[#333] transition-all flex items-center justify-center gap-2"
+                className={`w-full py-6 rounded-[2rem] text-white font-black text-sm uppercase tracking-[0.2em] transition-all shadow-2xl flex items-center justify-center gap-4 active:scale-95 disabled:opacity-50 ${
+                  isSuccess ? 'bg-emerald-600' : 'bg-blue-600'
+                }`}
               >
-                {isVerifying ? <Loader2 size={18} className="animate-spin" /> : <RefreshCcw size={18} />}
-                Cloud Verify
+                {isVerifying ? (
+                  <Loader2 size={24} className="animate-spin" />
+                ) : isSuccess ? (
+                  <CheckCircle size={24} />
+                ) : (
+                  <Facebook size={24} />
+                )}
+                {isVerifying ? 'Verifying Cloud Login...' : isSuccess ? 'Identity Confirmed' : 'Connect to Facebook'}
               </button>
+
               <button 
                 onClick={handleSave}
-                className="flex-1 py-5 rounded-2xl bg-blue-600 text-white font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl flex items-center justify-center gap-2"
+                className={`w-full py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 border ${
+                  isSaved ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30' : 'bg-white/5 text-gray-500 border-white/5 hover:text-white'
+                }`}
               >
-                {isSaved ? <Check size={18} /> : <Save size={18} />}
-                {isSaved ? 'Vault Updated' : 'Save Encrypted'}
+                {isSaved ? <Check size={14} /> : <Save size={14} />}
+                {isSaved ? 'Vault Updated' : 'Persist Encrypted to Vault'}
               </button>
             </div>
           </div>
@@ -231,7 +311,6 @@ const SettingsTab: React.FC<{
   );
 };
 
-// Fixed missing default export and App component implementation
 const App = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [unlockedCreds, setUnlockedCreds] = useState<FacebookCredentials | null>(null);
@@ -247,7 +326,7 @@ const App = () => {
     const creds = await VaultService.loadCredentials(masterPass);
     if (creds) {
       setUnlockedCreds(creds);
-      logEmitter.emit('SYSTEM', 'Vault unlocked successfully.', 'success');
+      logEmitter.emit('SYSTEM', 'Vault unlocked.', 'success');
     }
   };
 
@@ -263,33 +342,53 @@ const App = () => {
   return (
     <Layout activeTab={activeTab} setActiveTab={setActiveTab}>
       {activeTab === 'dashboard' && (
-        <div className="space-y-8">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <StatCard icon={<TrendingUp />} label="Total Revenue" value="RM 42,500" change="+12.5%" />
-            <StatCard icon={<Home />} label="Active Listings" value={properties.length.toString()} change="+3" />
-            <StatCard icon={<Users />} label="New Leads" value="18" change="+5" />
-            <StatCard icon={<Activity />} label="Bot Health" value="98%" change="Optimal" />
+        <div className="space-y-12 animate-in fade-in duration-700">
+          {/* Hero Mobile Header */}
+          <div className="lg:hidden p-8 rounded-[3rem] bg-gradient-to-br from-blue-600 to-blue-800 text-white shadow-2xl relative overflow-hidden">
+             <div className="absolute top-0 right-0 p-8 opacity-10">
+                <Target size={120} />
+             </div>
+             <p className="text-[10px] font-black uppercase tracking-[0.4em] mb-2 opacity-70">SaaS Command Center</p>
+             <h3 className="text-3xl font-black italic tracking-tighter mb-4">Good morning, <br/>Agent.</h3>
+             <button 
+                onClick={() => setShowTelegramIngestor(true)}
+                className="flex items-center gap-3 px-6 py-4 bg-white text-blue-600 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-95 transition-transform"
+             >
+                <PlusCircle size={18} />
+                Sync Telegram
+             </button>
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2 space-y-6">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xl font-bold text-white">Recent Automation Activity</h3>
-                <button 
-                  onClick={() => setShowTelegramIngestor(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all font-bold text-sm"
-                >
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-8">
+            <StatCard icon={<TrendingUp />} label="ROI" value="RM 0" change="+0%" />
+            <StatCard icon={<Home />} label="Active" value={properties.length.toString()} change={`+${properties.length}`} />
+            <StatCard icon={<Users />} label="Leads" value="0" change="+0" />
+            <StatCard icon={<Activity />} label="Health" value="100%" change="Optimal" />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-12">
+            <div className="lg:col-span-2 space-y-8">
+              <div className="flex items-center justify-between px-2">
+                <h3 className="text-xl font-black text-white uppercase italic tracking-tighter">Live Automation Stream</h3>
+                <button className="hidden lg:flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 transition-all font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-600/20 active:scale-95">
                   <PlusCircle size={16} />
                   SYNC TELEGRAM
                 </button>
               </div>
               <AutomationLogs />
             </div>
-            <div className="space-y-6">
-              <h3 className="text-xl font-bold text-white">Cloud Status</h3>
-              <div className="bg-[#1a1a1a] rounded-2xl border border-[#2a2a2a] p-6 space-y-4">
-                <StatusItem icon={<ShieldCheck className="text-green-500" />} label="Security Vault" status={unlockedCreds ? "Unlocked" : "Locked"} />
-                <StatusItem icon={<Globe className="text-blue-500" />} label="Airtop Engine" status="Standby" />
-                <StatusItem icon={<Zap className="text-yellow-500" />} label="AI Agent" status="Online" />
+            <div className="space-y-8">
+              <h3 className="text-xl font-black text-white uppercase italic tracking-tighter px-2">Infrastructure</h3>
+              <div className="bg-[#111] rounded-[2.5rem] border border-white/5 p-8 space-y-6 shadow-2xl">
+                <StatusItem icon={<ShieldCheck className={unlockedCreds ? "text-emerald-500" : "text-gray-600"} />} label="Vault" status={unlockedCreds ? "UNLOCKED" : "LOCKED"} />
+                <StatusItem icon={<Globe className="text-blue-500" />} label="Cloud" status="STANDBY" />
+                <StatusItem icon={<Zap className="text-yellow-500" />} label="Agent" status="ONLINE" />
+                <div className="pt-8 border-t border-white/5">
+                   <p className="text-[10px] text-gray-500 uppercase font-black mb-3 tracking-[0.2em]">Session Health</p>
+                   <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                      <div className="h-full bg-emerald-500 w-[95%] shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
+                   </div>
+                </div>
               </div>
             </div>
           </div>
@@ -297,19 +396,25 @@ const App = () => {
       )}
 
       {activeTab === 'properties' && (
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xl font-bold text-white">Property Portfolio</h3>
-            <button className="px-4 py-2 bg-[#2a2a2a] text-white rounded-lg border border-[#3a3a3a] hover:bg-[#333] transition-all text-sm font-bold">
-              + ADD MANUAL
+        <div className="space-y-8 animate-in fade-in duration-500">
+          <div className="flex items-center justify-between px-2">
+            <h3 className="text-xl lg:text-2xl font-black text-white uppercase italic tracking-tighter">Inventory</h3>
+            <button className="px-6 py-3 bg-white/5 text-white rounded-2xl border border-white/10 hover:bg-white/10 transition-all text-xs font-black uppercase tracking-widest">
+              Manual Add
             </button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
             {properties.length > 0 ? (
               properties.map(p => <PropertyCard key={p.id} property={p} />)
             ) : (
-              <div className="col-span-full py-20 text-center text-gray-600 italic">
-                No properties indexed yet. Sync from Telegram to get started.
+              <div className="col-span-full py-32 text-center border-2 border-dashed border-white/5 rounded-[3rem] bg-[#111]/40 flex flex-col items-center justify-center space-y-6">
+                <div className="w-24 h-24 bg-white/5 rounded-[2.5rem] flex items-center justify-center text-gray-700">
+                   <Home size={48} />
+                </div>
+                <div>
+                  <h4 className="text-gray-400 font-black text-sm uppercase tracking-[0.3em] italic">Portfolio Empty</h4>
+                  <p className="text-[10px] text-gray-600 mt-2 uppercase tracking-widest">Awaiting Telegram sync for ingestion.</p>
+                </div>
               </div>
             )}
           </div>
@@ -340,25 +445,25 @@ const App = () => {
 };
 
 const StatCard = ({ icon, label, value, change }: any) => (
-  <div className="bg-[#1a1a1a] p-6 rounded-2xl border border-[#2a2a2a] space-y-4">
+  <div className="bg-[#111] p-6 lg:p-8 rounded-[2rem] border border-white/5 space-y-4 hover:border-blue-500/30 transition-all shadow-xl group active:scale-95">
     <div className="flex items-center justify-between">
-      <div className="p-2 bg-blue-500/10 text-blue-500 rounded-lg">{icon}</div>
-      <span className="text-[10px] font-bold text-green-500 bg-green-500/10 px-2 py-0.5 rounded">{change}</span>
+      <div className="p-3 bg-blue-500/10 text-blue-500 rounded-2xl group-hover:scale-110 transition-transform">{icon}</div>
+      <span className="text-[8px] lg:text-[10px] font-black text-emerald-500 bg-emerald-500/10 px-3 py-1 rounded-full">{change}</span>
     </div>
     <div>
-      <p className="text-xs text-gray-500 font-medium">{label}</p>
-      <p className="text-2xl font-bold text-white">{value}</p>
+      <p className="text-[9px] lg:text-[10px] text-gray-500 font-black uppercase tracking-[0.2em]">{label}</p>
+      <p className="text-2xl lg:text-3xl font-black text-white mt-1 italic tracking-tighter">{value}</p>
     </div>
   </div>
 );
 
 const StatusItem = ({ icon, label, status }: any) => (
-  <div className="flex items-center justify-between p-3 rounded-xl bg-[#252525] border border-white/5">
-    <div className="flex items-center gap-3">
-      {icon}
-      <span className="text-sm text-gray-300">{label}</span>
+  <div className="flex items-center justify-between p-4 rounded-2xl bg-black border border-white/5 group transition-all">
+    <div className="flex items-center gap-4">
+      <div className="shrink-0">{icon}</div>
+      <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest">{label}</span>
     </div>
-    <span className="text-[10px] font-black uppercase tracking-wider text-gray-500">{status}</span>
+    <span className="text-[10px] font-black tracking-widest text-gray-600">{status}</span>
   </div>
 );
 

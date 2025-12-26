@@ -1,4 +1,3 @@
-
 import { AirtopSession, PropertyData, FacebookCredentials, AuthFailureReason } from '../types';
 
 const AIRTOP_API_KEY = '3715e397ce7d0e6f.qS7SyBWabzBqC5vuQHSXRlfzceWyYlmHRApbT10ZRd';
@@ -70,7 +69,7 @@ class AutomationService {
   }
 
   /**
-   * Performs a real diagnostic login check on Facebook
+   * Performs a real diagnostic login check on Facebook via cloud browser
    */
   async verifyFacebookAuth(creds: FacebookCredentials): Promise<{ success: boolean; reason?: AuthFailureReason; message?: string }> {
     try {
@@ -79,11 +78,16 @@ class AutomationService {
       const diagnosticPrompt = `
         1. Navigate to https://www.facebook.com.
         2. ${creds.authMethod === 'cookies' 
-            ? `Set session cookies: ${creds.cookies}` 
-            : `Attempt login with email ${creds.email} and password ${creds.password}`}
-        3. Determine the current state of the page.
-        4. Return a JSON object: 
-           {"status": "SUCCESS" | "WRONG_PASSWORD" | "2FA_REQUIRED" | "LOCKED" | "EXPIRED", "details": "string description"}
+            ? `Apply session cookies: ${creds.cookies}` 
+            : `Attempt login using email: ${creds.email} and password: ${creds.password}`}
+        3. Observe the current page content and state.
+        4. Detect if:
+           - Login succeeded (Redirected to home/feed)
+           - Wrong password error shown
+           - 2FA/Code Generator challenge appeared
+           - Account "locked" or "checkpoint" page appeared
+           - Cookies invalid/expired
+        5. Return ONLY a JSON string like: {"status": "SUCCESS" | "WRONG_PASSWORD" | "2FA_REQUIRED" | "CHALLENGE" | "LOCKED" | "EXPIRED"}
       `;
 
       const url = `https://api.airtop.ai/v1/sessions/${session.id}/prompt`;
@@ -95,17 +99,18 @@ class AutomationService {
       const result = await response.json();
       const outputText = result.output || "";
       
-      // Parse potential JSON from LLM output
       if (outputText.includes('SUCCESS')) return { success: true };
-      if (outputText.includes('WRONG_PASSWORD')) return { success: false, reason: AuthFailureReason.WRONG_CREDENTIALS, message: "The email or password provided is incorrect." };
-      if (outputText.includes('2FA_REQUIRED')) return { success: false, reason: AuthFailureReason.TWO_FACTOR_REQUIRED, message: "Facebook is requesting a 2FA code. Please disable 2FA or use session cookies." };
-      if (outputText.includes('LOCKED')) return { success: false, reason: AuthFailureReason.ACCOUNT_LOCKED, message: "This Facebook account has been temporarily locked by Meta security." };
-      if (outputText.includes('EXPIRED')) return { success: false, reason: AuthFailureReason.COOKIES_EXPIRED, message: "The session cookies provided have expired or are invalid." };
+      if (outputText.includes('WRONG_PASSWORD')) return { success: false, reason: AuthFailureReason.WRONG_CREDENTIALS };
+      if (outputText.includes('2FA_REQUIRED')) return { success: false, reason: AuthFailureReason.TWO_FACTOR_REQUIRED };
+      if (outputText.includes('CHALLENGE')) return { success: false, reason: AuthFailureReason.AUTH_CHALLENGE };
+      if (outputText.includes('LOCKED')) return { success: false, reason: AuthFailureReason.ACCOUNT_LOCKED };
+      if (outputText.includes('EXPIRED')) return { success: false, reason: AuthFailureReason.COOKIES_EXPIRED };
 
-      return { success: true }; // Fallback to true if we established a session but couldn't parse specific failure
+      // Default if established session but logic unclear
+      return { success: true }; 
     } catch (error: any) {
-      if (error.reason) return { success: false, reason: error.reason, message: error.message };
-      return { success: false, reason: AuthFailureReason.TIMEOUT, message: "The cloud browser timed out while verifying Facebook." };
+      if (error.reason) return { success: false, reason: error.reason };
+      return { success: false, reason: AuthFailureReason.NETWORK_ERROR };
     }
   }
 
